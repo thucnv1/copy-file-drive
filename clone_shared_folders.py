@@ -18,6 +18,7 @@ print(LOGS_FOLDER)
 SUCCESS_FILE = os.path.join(LOGS_FOLDER, "success.log")
 ERROR_FILE = os.path.join(LOGS_FOLDER, "error.log")
 LOG_FILE = os.path.join(LOGS_FOLDER, "log.log")
+WRITE_FOLDER = os.path.join(LOGS_FOLDER, "folder.log")
 
 class Logger():
     def __init__(self, file_name, formatter = None):
@@ -38,6 +39,7 @@ class Logger():
 logger_error = Logger(ERROR_FILE)
 logger_success = Logger(SUCCESS_FILE)
 logger_log = Logger(LOG_FILE)
+logger_folder = Logger(WRITE_FOLDER)
 
 COUNT = 1
 
@@ -89,23 +91,37 @@ def copy_files(service,fileId, folder_parent_id_target):
 def getFolderId(data_array,id,type):
     for item in data_array:
         if id in item:
-            return item.split(".")[type]
+            if type:
+                return item.split(".")[type]
+            else:
+                return item
     return None
 
-def run_service(service, folder_shared_parent_id, folder_parent_id_target, data_sucess, data_error ):
+def run_service(service, folder_shared_parent_id, folder_parent_id_target, data_sucess, data_error, data_folder ):
     share_folders = get_list_by_type(service, "folder", True, folder_shared_parent_id)
     share_files = get_list_by_type(service, "file", True, folder_shared_parent_id)
-    
     for f in share_files:
         check_success_file = getFolderId(data_sucess, f["id"], 0)
-        check_error_file = getFolderId(data_error, f["id"],0)
+        check_error_file = getFolderId(data_error, f["id"], None)
         if check_error_file == None and check_success_file:
             continue
+        elif check_error_file and check_success_file == None:
+            try:
+                print(f, 222222222)
+                copy_files(service, check_error_file.split(".")[0], check_error_file.split(".")[2])
+                logger_success.info("{}.{}.{}".format(f["id"],folder_shared_parent_id,folder_parent_id_target))
+                delete_line_log(ERROR_FILE, check_error_file)
+                continue
+            except:
+                logging.exception("err 22222222222")
+                logger_error.error("{}.{}.{}".format(f["id"],folder_shared_parent_id,folder_parent_id_target))
         
         try:
+            print(f, 33333333333)
             copy_files(service, f["id"], folder_parent_id_target)
             logger_success.info("{}.{}.{}".format(f["id"],folder_shared_parent_id,folder_parent_id_target))
         except:
+            logging.exception("errr 3333333333333")
             logger_error.error("{}.{}.{}".format(f["id"],folder_shared_parent_id,folder_parent_id_target))
     
     for f in share_folders:
@@ -115,13 +131,14 @@ def run_service(service, folder_shared_parent_id, folder_parent_id_target, data_
             'parents': [folder_parent_id_target]
         }
         check_success_folder_target = getFolderId(data_sucess, f["id"],2)
-        
-        if check_success_folder_target:
+        check_success_parent_folder_target = getFolderId(data_folder, f["name"], 0)
+        if check_success_folder_target or check_success_parent_folder_target:
             pass
         else:
             folder = service.files().create(body=name_folder, fields="id").execute()
             check_success_folder_target = folder.get("id")
-        run_service(service, f["id"], check_success_folder_target, data_sucess, data_error)
+            logger_folder.info("{}.{}".format(check_success_folder_target, f["name"]))
+        run_service(service, f["id"], check_success_folder_target or check_success_parent_folder_target, data_sucess, data_error, data_folder)
         
 def get_args_from_cli():
     parser = argparse.ArgumentParser(description='Input!')
@@ -138,7 +155,14 @@ def read_file_log(path):
         datas = datas.readlines()
     return datas
 
-
+def delete_line_log(path, item):
+    lines = read_file_log(path)
+    with open(path, "w") as datas: 
+        for line in lines:  
+            if line.strip("\n") != item:
+                print(item, 1111111111111111)
+                datas.write(line)
+    return datas
 
 def main():
     print("Clone folder from google drive")
@@ -177,12 +201,15 @@ def main():
             flagOK = True
             data_success = read_file_log(SUCCESS_FILE)
             data_error = read_file_log(ERROR_FILE)
+            data_folder = read_file_log(WRITE_FOLDER)
             
             data_success = [f.strip() for f in data_success]
             data_error = [f.strip() for f in data_error]
-            run_service(service, folder_shared_parent_id, folder_parent_id_target, data_success, data_error)
+            data_folder = [f.strip() for f in data_folder]
+            run_service(service, folder_shared_parent_id, folder_parent_id_target, data_success, data_error, data_folder)
                  
         except:
+            logging.exception("Error occurred while coping files")
             if turn_on_off_flag == False:
                 raise Exception("Finishing")
             flagOK = False
